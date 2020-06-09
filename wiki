@@ -1,0 +1,8 @@
+Los integrantes del grupo son:
+
+Pedro Jesús de Barrios Roncero
+José Miguel Castellano Sierra
+
+Los ficheros son los siguientes:
+
+EstudioCalidadVinoBlanco.Rmd Código en R que proyecto analítico.
