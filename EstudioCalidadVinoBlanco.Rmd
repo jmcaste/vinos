@@ -1,0 +1,378 @@
+---
+title: Estudio de la influencia de las características estructurales en la calidad
+  del vino blanco
+author: 'Autores: José Miguel Castellano Sierra y Pedro Jesús de Barrios Roncero'
+date: "Junio 2020"
+output:
+  pdf_document:
+    fig_caption: yes
+    number_sections: yes
+  word_document: default
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+---
+\newpage
+\tableofcontents
+\newpage
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Descripción del conjunto de datos
+
+```{r message= FALSE, warning=FALSE}
+if(!require(knitr)){
+    install.packages('knitr', repos='http://cran.us.r-project.org')
+    library(knitr)
+}
+
+if(!require(arules)){
+    install.packages('arules', repos='http://cran.us.r-project.org')
+    library(arules)
+}
+
+if(!require(arulesViz)){
+    install.packages('arulesViz', repos='http://cran.us.r-project.org')
+    library(arulesViz)
+}
+
+ if(!require(scales)){
+    install.packages('scales', repos='http://cran.us.r-project.org')
+    library(scales)
+}
+
+if(!require(ggplot2)){
+    install.packages('ggplot2', dependencies = TRUE, repos='http://cran.us.r-project.org')
+    library(ggplot2)
+}
+
+if(!require(dplyr)){
+    install.packages('dplyr', repos='http://cran.us.r-project.org')
+    library(dplyr)
+}
+
+if(!require(scales)){
+    install.packages('scales', repos='http://cran.us.r-project.org')
+    library(scales)
+}
+
+if(!require(corrplot)){
+    install.packages('corrplot', repos='http://cran.us.r-project.org')
+    library(corrplot)
+}
+
+if(!require(ngram)){
+    install.packages('ngram', repos='http://cran.us.r-project.org')
+    library(ngram)
+}
+
+if(!require(car)){
+    install.packages('car', repos='http://cran.us.r-project.org')
+    library(car)
+}
+```
+
+El juego de datos elegido trata sobre la calidad del vino blanco en función de sus características y está disponible en el siguiente enlace: http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/
+Este juego de datos está compuesto por 12 variables, siendo 11 de las cuales características del vino (tales como la densidad o el PH) y una variable que califica la calidad del vino (asignando una nota entre 0 y 10 a cada muestra).
+
+El dataset cuenta con 11 atributos numéricos, así como una variable que califica la calidad de las muestras.
+
+Los atributos que tenemos son los siguientes:
+
+1. fixed acidity (acidez fija)
+2. volatile acidity (acidez volátil)
+3. citric acid (ácido cítrico)
+4. residual sugar (azúcar residual)
+5. chlorides (cloruros)
+6. free sulfur dioxide (dióxido de azufre libre)
+7. total sulfur dioxide (dióxido de azufre total)
+8. density (densidad)
+9. pH
+10. sulphates (sulfatos)
+11. alcohol
+12. quality (calidad)
+
+La variable de salida es la calidad. Tiene un rango de valores comprendido entre 0 y 10 y ha sido estimada en función de datos de percepción sensorial.
+
+Este estudio pretende analizar la influencia de los distintos atributos estructurales en la calidad final del vino, de manera que se detecten cuáles son más preponderantes, para así poder modificar los procesos de elaboración del vino. El fin que se persigue es el de mejorar la calidad de la producción para obtener vinos de gama alta y así aumentar los márgenes de beneficio de la bodega.
+
+```{r message= FALSE, warning=FALSE}
+wine_read <- read.csv(
+  'http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv', 
+  sep=';', header = TRUE)
+colnames(wine_read)<-c("fixed_acidity", "volatile_acidity", "citric_acid", "residual_sugar",
+                       "chlorides", "free_sulfur_dioxide", "total_sulfur_dioxide", "density",
+                       "pH", "sulphates", "alcohol", "quality")
+```
+
+# Integración, selección y limpieza de los datos de interés
+
+En primer lugar, realizaremos un estudio de cómo influye cada uno de los atributos en la calidad del vino, sin descartar ninguno. Posteriormente, estudiaremos la correlacción que puedan tener los distintos atributos y aplicaremos el método de reducción de la dimensionalidad ACP para obtener un conjunto reducido de variables no correlacionadas que permitan predecir con fiabilidad la calidad de las muestras de vino.
+
+En primer lugar, analizaremos si el conjunto de datos contienen elementos vacíos o con valores NA:
+
+```{r message=FALSE, warning=FALSE}
+registrosNA<-matrix(nrow=1,ncol=ncol(wine_read));
+registrosNulos<-matrix(nrow=1,ncol=ncol(wine_read));
+
+for (m in 1:ncol(wine_read)) {
+    registrosNA[1,m]<-length(wine_read[(is.na(wine_read[,m])==TRUE),m])
+    print(concatenate("El número de muestras que contienen NA en el atributo",
+                      names(wine_read)[m]," es:", registrosNA[1,m]))
+    
+    registrosNulos[1,m]<-length(wine_read[(wine_read[,m]==""),m])
+    print(concatenate("El número de muestras que no traen informado el atributo",
+                      names(wine_read)[m]," es:", registrosNulos[1,m]))
+    
+    print("")
+    m<-m+1
+}
+```
+
+Las muestras tienen informados todos sus atributos, por lo que no es necesario acometer ninguna acción.
+
+Haremos un análisis previo, viendo las primeras filas de nuestro dataset, así como el tipo de las variables que tenemos y un estudio para ver la distribución de los valores máximos y mínimos teniendo en cuenta la media, la mediana y los cuartiles.
+
+```{r message= FALSE, warning=FALSE}
+dim(wine_read)
+head(wine_read, 5)
+```
+
+Vemos que todos los atributos contienen valores numéricos, pudiendo tomar cualquier valor perteneciente al conjunto de los número reales.
+
+```{r message= FALSE, warning=FALSE}
+str(wine_read)
+summary(wine_read)
+```
+
+Ahora mostraremos el número de valores distintos que puede tomar cada uno de las variables en estudio.
+
+```{r message= FALSE, warning=FALSE}
+apply(wine_read, 2, function(x) length(unique(x)))
+```
+
+Como se puede apreciar, el campo quality tiene únicamente 7 valores distintos, mientras que el resto de variables numéricas toman un gran número de valores distintos.
+
+A continuación se muestra en un histograma la frecuencia de las muestras en el juego de datos en función de la calidad:
+
+```{r message= FALSE, warning=FALSE}
+
+hist(wine_read[["quality"]], xlab="Calidad del vino", ylab="Número de muestras",
+     main="Muestras de vino blanco" , breaks=length(unique(wine_read[["quality"]])),
+     cex.names=1, names=T)
+
+```
+
+Como se puede observar, los datos del número de muestras en función de la calidad tienen una distribución que se asemeja a la distribución normal, aunque posteriormente realizaremos el test de normalidad de Shapiro-Wilk para comprobarlo.
+
+Para detectar visualmente los outliers que tiene el conjunto de datos, mostraremos las variables en un diagrama de cajas a través de la función boxplot.
+
+```{r message= FALSE, warning=FALSE}
+summary(wine_read)
+
+boxplot(wine_read, xlab=colnames(wine_read))
+
+```
+
+Al analizar la gráfica, se observa que el atributo "free_sulfur_dioxide" presenta varios valores extremos muy marcados En menor medida, también se aprecia la existencia de un destacado número de outliers en el atributo "total_sulfur_dioxide".
+
+Viendo que la variable free_sulfur_dioxide presenta outliers muy marcados, procederemos a eliminar tales muestras.
+
+```{r message= FALSE, warning=FALSE}
+outliersFreeSulfur <- boxplot(wine_read$free_sulfur_dioxide, plot=FALSE)$out
+wine_read[which(wine_read$free_sulfur_dioxide %in% outliersFreeSulfur),]
+wine_read <- wine_read[-which(wine_read$free_sulfur_dioxide %in% outliersFreeSulfur),]
+boxplot(wine_read$free_sulfur_dioxide)
+```
+```{r message= FALSE, warning=FALSE}
+outliersTotalSulfur <- boxplot(wine_read$total_sulfur_dioxide, plot=FALSE)$out
+wine_read[which(wine_read$total_sulfur_dioxide %in% outliersTotalSulfur),]
+wine_read <- wine_read[-which(wine_read$total_sulfur_dioxide %in% outliersTotalSulfur),]
+boxplot(wine_read$total_sulfur_dioxide)
+```
+
+# Análisis de los datos
+
+Ahora normalizamos las variables para reducir el sesgo causado por la combinación de valores medidos a diferentes escalas para favorecer el agrupamiento que vamos a realizar.
+
+```{r message= FALSE, warning=FALSE}
+vinoBlancoMatriz <- as.matrix(wine_read,nrow=nrow(wine_read), ncol=ncol(wine_read))
+vinoBlancoMatrizRescalado<-matrix(ncol=ncol(wine_read), nrow=nrow(wine_read))
+colnames(vinoBlancoMatrizRescalado) <- colnames(wine_read)
+
+for (m in 1:ncol(vinoBlancoMatriz)) {
+  vinoBlancoMatrizRescalado[,m] <- rescale(vinoBlancoMatriz[,m], to = c(0, 1),
+                                           from = range(vinoBlancoMatriz[,m],
+                                                        na.rm = TRUE, finite = TRUE))
+}
+```
+
+Para determinar qué atributos son clave en la calidad del vino, aplicaremos el método del análisis de los componentes principales (ACP), que permite reducir las dimensiones del problema. El ACP es un procedimiento estadístico que utiliza una transformación ortogonal para convertir un conjunto de observaciones de variables posiblemente correlacionadas (cada una de las cuales toma valores numéricos) en un conjunto de valores no correlacionados linealmente.
+
+Desde una perspectiva simplificada, el procedimiento ACP transforma los datos linealmente en nuevas propiedades que no tienen correlación entre sí.
+
+```{r message= FALSE, warning=FALSE}
+vinoBlancoPCA <- prcomp(vinoBlancoMatrizRescalado[,1:11], center = TRUE, scale = TRUE)
+summary(vinoBlancoPCA)
+plot(vinoBlancoPCA)
+```
+
+```{r message= FALSE, warning=FALSE}
+prop_varianza <- vinoBlancoPCA$sdev^2/sum(vinoBlancoPCA$sdev^2)
+prop_varianza_acum <- cumsum(prop_varianza)
+
+ggplot(data = data.frame(prop_varianza_acum, pc = factor(1:11)),
+      aes(x = pc, y = prop_varianza_acum, group = 1)) +
+ geom_point() +
+ geom_line() +
+ geom_label(aes(label = round(prop_varianza_acum,2))) +
+ theme_bw() +
+ labs(x = "Componentes principales", y = "Prop. varianza explicada acumulada")
+```
+
+Aplicando el análisis de componentes principales obtenemos que somos capaces de predecir aproximadamente el 90% del valor de la calidad de las muestras analizando únicamente 7 componentes principales que no tienen correlación entre sí.
+
+Las componentes principales son las siguientes:
+
+```{r message= FALSE, warning=FALSE}
+vinoBlancoPCA$rotation
+```
+
+Para revisar si las variables pueden ser candidatas a la normalización, analizaremos las gráficas de quantile-quantile plot y el histograma.
+
+```{r message= FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+
+for(i in 1:ncol(vinoBlancoMatrizRescalado)) {
+  qqnorm(vinoBlancoMatrizRescalado[,i],
+         main = paste("Normal Q-Q Plot for ",colnames(vinoBlancoMatrizRescalado)[i]))
+  qqline(vinoBlancoMatrizRescalado[,i],col="red")
+  hist(vinoBlancoMatrizRescalado[,i],
+  main=paste("Histograma para ", colnames(vinoBlancoMatrizRescalado)[i]),
+  xlab=colnames(vinoBlancoMatrizRescalado)[i], freq = FALSE)
+}
+```
+
+Los resultados del quantile-quantile plot nos indica que si las variables siguen una distribución normalizada o no.
+
+Para revisar si las variables están normalizadas, aplicaremos el test de Shapiro Wilk en cada atributo numérico. Éste se basa en asumir como hipótesis nula que la población está distribuida normalmente y, si el p-valor es menor al nivel de significancia (se suele tomar el valor 0,05), entonces la hipótesis nula es rechazada y se concluye que los datos no tienen una distribución normal. Si, por el contrario, el p-valor es mayor a 0,05, se concluye que no se puede rechazar dicha hipótesis y se asume que los datos siguen una distribución normal.
+
+```{r message= FALSE, warning=FALSE}
+
+for(i in 1:ncol(vinoBlancoMatrizRescalado)) {
+  print(concatenate("Para el atributo ",names(vinoBlancoMatrizRescalado)[i],":"))
+  print(shapiro.test(vinoBlancoMatrizRescalado[,i]))
+}
+
+```
+
+El test de Shapiro-Wilk nos indica que ninguna variable está normalizada, ya que el p-value es menor que 0,05, por lo que podemos rechazar la hipótesis nula y entender que el conjunto de datos no sigue una distribución normal.
+
+Ahora estudiaremos si existe correlación entre los atributos mediante el modelo matemático de la regresión lineal. 
+
+Para ello, nos llevaremos a arrays la información de cada campo para que quede más claro el código al invocar a la función linear models. La variable quality no la usaremos aqu al ser la variable sobre la que estableceremos el grado de relación.
+
+```{r message= FALSE, warning=FALSE}
+vinoBlancoMatrizRescalado <- as.data.frame(vinoBlancoMatrizRescalado)
+colnames(vinoBlancoMatrizRescalado)<-c("fixed_acidity", "volatile_acidity", "citric_acid",
+                                       "residual_sugar", "chlorides", "free_sulfur_dioxide",
+                                       "total_sulfur_dioxide", "density", "pH", "sulphates",
+                                       "alcohol", "quality")
+
+fixed_acidity = vinoBlancoMatrizRescalado$fixed_acidity
+volatile_acidity = vinoBlancoMatrizRescalado$volatile_acidity
+citric_acid = vinoBlancoMatrizRescalado$citric_acid
+residual_sugar = vinoBlancoMatrizRescalado$residual_sugar
+chlorides = vinoBlancoMatrizRescalado$chlorides
+free_sulfur_dioxide = vinoBlancoMatrizRescalado$free_sulfur_dioxide
+total_sulfur_dioxide = vinoBlancoMatrizRescalado$total_sulfur_dioxide
+density = vinoBlancoMatrizRescalado$density
+pH = vinoBlancoMatrizRescalado$pH
+sulphates = vinoBlancoMatrizRescalado$sulphates
+alcohol = vinoBlancoMatrizRescalado$alcohol
+```
+
+Aquí utilizaremos las variables modeloX para invocar al modelo linear model. La variable quality será la variable respuesta y el resto de variables las utilizaremos como variables regresoras.
+
+```{r message= FALSE, warning=FALSE}
+modelo1 <- lm(quality ~ fixed_acidity + volatile_acidity + 
+                citric_acid, data = vinoBlancoMatrizRescalado)
+```
+
+
+```{r message= FALSE, warning=FALSE}
+modelo2 <- lm(quality ~ residual_sugar + chlorides + 
+                free_sulfur_dioxide, data = vinoBlancoMatrizRescalado)
+```
+
+
+```{r message= FALSE, warning=FALSE}
+modelo3 <- lm(quality ~ total_sulfur_dioxide + 
+                density + pH, data = vinoBlancoMatrizRescalado)
+```
+
+
+```{r message= FALSE, warning=FALSE}
+modelo4 <- lm(quality ~ sulphates + 
+                alcohol, data = vinoBlancoMatrizRescalado)
+```
+
+En los objetos modeloX hemos guardado una lista con información relevante sobre el análisis de nuestras variables del data frame respecto a la variable quality. A través del comando summary se muestra la información más relevante.
+
+Nos vamos a centrar en el valor del coeficiente de correlación al cuadrado Multiple R-squared, ya que este valor es el que nos indica cómo de buena es la relación entre la variable respuesta y la variable regresora.
+
+Puesto que obtenemos unos valores de Multiple R-squared bajos para todos los modelos, vamos a realizar un único modelo con todas las variables.
+
+```{r message= FALSE, warning=FALSE}
+tabla_coeficientes <- matrix(
+  c(1, summary(modelo1)$r.squared,
+    2, summary(modelo2)$r.squared,
+    3, summary(modelo3)$r.squared,
+    4, summary(modelo4)$r.squared),
+ncol = 2, byrow = TRUE)
+colnames(tabla_coeficientes) <- c("Modelo", "R^2")
+tabla_coeficientes
+```
+
+En este caso, el valor de Adjusted R-squared mejora, pero sigue siendo muy bajo. Ésto se debe a que los datos no están distribuidos normalmente, tal y como hemos comprobado anteriormente, por lo que la regresión no nos da garantías para realizar predicciones del valor de la variable en cuestión.
+
+```{r message= FALSE, warning=FALSE}
+model_tot <- lm(quality ~ fixed_acidity + volatile_acidity + citric_acid + 
+                  chlorides + free_sulfur_dioxide + total_sulfur_dioxide + 
+                  density + pH + sulphates + alcohol,  data = vinoBlancoMatrizRescalado)
+summary(model_tot)
+```
+
+Ahora mostraremos gráficamente la correlación que presentan nuestras variables, es decir, la relación de dependencia que guarda cada variable con el resto de variables. Nos centraremos en la variable quality, para ver qué variable ejerce mayor influencia sobre la variable quality.
+
+Con las 3 presentaciones de los resultados, vemos que la variable que tiene mayor relación es la variable alcohol, cuyo valor es de 0,44.
+Este valor indica que existe poca relación de las variables respecto a la variable quality.
+
+```{r message= FALSE, warning=FALSE}
+correlacion <- cor(vinoBlancoMatrizRescalado)
+corrplot(correlacion)
+corrplot(correlacion, method = "number")
+print(correlacion)
+```
+
+# Conclusiones finales
+
+De los resultados obtenidos con el test de Shapiro-Wilk se deduce que el juego de datos no sigue una distribución normal.
+
+
+Del estudio de la correlación entre las variables se deduce que la densidad y el azúcar residual guardan una fuerte correlación entre sí (del 84%). Asimismo, se puede afirmar que el alcohol y la densidad tienen un alto grado de correlación (de más del 70%).
+
+
+Aplicando el análisis de componentes principales obtenemos que somos capaces de predecir aproximadamente el 90% del valor de la calidad de las muestras analizando únicamente 7 componentes principales que no tienen correlación entre sí.
+
+
+El éxito de este estudio ha sido parcial, ya que no se ha conseguido establecer ninguna correlación fuerte entre la calidad y los atributos del juego de datos de forma directa. Sin embargo, se ha conseguido obtener una combinación de 7 componentes principales (cada una de las cuales podría representar a un tipo de vino que tuviese las características correspondientes a cada componente principal) para así determinar la composición de cada tipo de vino en función de la calidad de la muestra que se desee analizar.
+
+# Contribuciones
+
+Todas las partes de este estudio han sido realizadas de manera conjunta por ambos autores.
+
